@@ -1,4 +1,4 @@
-name: Auto Update JioTV Cookies (Extract hdnea Cookie Every 4 Hours)
+name: Auto Update JioTV hdnea Cookie (Every 4 Hours)
 permissions:
   contents: write
 on:
@@ -14,98 +14,69 @@ jobs:
           fetch-depth: 0 # Fetch full history to avoid shallow clone issues
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
-      - name: Fetch and Validate JSON
+      - name: Fetch JSON and Extract hdnea Cookie
         run: |
-          echo "=== Fetching from https://jo-json.vodep39240327.workers.dev/ ==="
+          echo "=== Fetching JSON from https://jo-json.vodep39240327.workers.dev/ ==="
           curl -s -f https://jo-json.vodep39240327.workers.dev/ > stream.json || {
-            echo "✗ ERROR: Failed to fetch stream.json. HTTP request failed."
+            echo "✗ ERROR: Failed to fetch JSON."
             exit 1
           }
           if [ ! -s stream.json ]; then
-            echo "✗ ERROR: stream.json is empty."
+            echo "✗ ERROR: JSON file is empty."
             exit 1
           fi
-          echo "File size: $(wc -c < stream.json) bytes"
-          if ! jq -e . stream.json >/dev/null 2>&1; then
-            echo "✗ ERROR: stream.json is not valid JSON. Dumping content:"
-            cat stream.json
-            exit 1
-          fi
-          echo "Searching for url..."
-          if jq -e '.url' stream.json >/dev/null 2>&1; then
-            echo "✓ url found in file!"
-          else
-            echo "✗ url NOT found. Dumping first 200 lines:"
-            head -n 200 stream.json
-            exit 1
-          fi
-      - name: Extract hdnea Cookie and Update Jiotv.json
-        run: |
+          echo "✓ JSON fetched. File size: $(wc -c < stream.json) bytes"
+
           echo "=== Extracting hdnea Cookie ==="
           FULL_URL=$(jq -r '.url' stream.json 2>/dev/null || echo "null")
           if [ "$FULL_URL" = "null" ] || [ -z "$FULL_URL" ]; then
-            echo "✗ ERROR: No valid URL found in url field. Update skipped."
+            echo "✗ ERROR: No valid URL found in JSON. Update skipped."
             rm -f stream.json
             exit 0
           fi
-          echo "✓ Full URL: $FULL_URL"
 
-          # Extract only the hdnea cookie value (without __hdnea__= prefix)
           NEW_COOKIE=$(echo "$FULL_URL" | grep -o '__hdnea__=[^&]*' | cut -d'=' -f2- || echo "null")
           if [ "$NEW_COOKIE" = "null" ] || [ -z "$NEW_COOKIE" ]; then
-            echo "✗ ERROR: No valid hdnea cookie found in URL. Update skipped."
+            echo "✗ ERROR: No valid hdnea cookie found. Update skipped."
             rm -f stream.json
             exit 0
           fi
-          echo "✓ hdnea Cookie extracted: $NEW_COOKIE"
-
+          echo "✓ hdnea Cookie: $NEW_COOKIE"
+      - name: Update Jiotv.json
+        run: |
           echo "=== Updating Jiotv.json ==="
-          # Create a backup of Jiotv.json or initialize if missing
           cp Jiotv.json Jiotv_backup.json 2>/dev/null || echo '[{"cookie": ""}]' > Jiotv_backup.json
           if ! jq -e . Jiotv_backup.json >/dev/null 2>&1; then
-            echo "✗ WARNING: Jiotv.json is invalid JSON. Creating a basic structure."
+            echo "✗ WARNING: Jiotv.json is invalid JSON. Initializing new structure."
             echo '[{"cookie": "'"$NEW_COOKIE"'"}]' > Jiotv_backup.json
           fi
-          # Update cookie in Jiotv.json
           jq --arg new_cookie "$NEW_COOKIE" 'map(if .cookie then .cookie = $new_cookie else . + {"cookie": $new_cookie} end)' Jiotv_backup.json > Jiotv_updated.json
           mv Jiotv_updated.json Jiotv.json
+          echo "✓ Jiotv.json updated with cookie: $NEW_COOKIE"
 
-          echo "✓ Update complete. New cookie: $NEW_COOKIE"
-          echo "Preview of updated Jiotv.json (first entry's cookie):"
-          jq '.[0].cookie' Jiotv.json 2>/dev/null || echo "No valid JSON to preview"
-
-          # Stage Jiotv.json to avoid unstaged changes
           git add Jiotv.json
-      - name: Clean Up Temporary Files
+      - name: Clean Up
         run: |
-          # Remove temporary files
           rm -f stream.json Jiotv_backup.json
-          echo "✓ Cleaned up temporary files (stream.json, Jiotv_backup.json)"
+          echo "✓ Cleaned up temporary files"
       - name: Commit and Push Changes
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
 
-          # Check if Jiotv.json has changes
           if git diff --staged --quiet; then
             echo "✓ No changes to Jiotv.json. Skipping commit."
             exit 0
           fi
 
-          # Commit changes to Jiotv.json
-          git commit -m "Auto-update hdnea cookie in Jiotv.json (new: ${{ github.sha }})"
-
-          # Pull latest changes with rebase
+          git commit -m "Update hdnea cookie in Jiotv.json (${{ github.sha }})"
           git pull --rebase origin main || {
-            echo "✗ ERROR: Git pull --rebase failed. Dumping git status:"
+            echo "✗ ERROR: Git pull --rebase failed."
             git status
             exit 1
           }
-
-          # Push changes
           git push || {
-            echo "✗ ERROR: Git push failed. Checking GITHUB_TOKEN or repo permissions."
-            echo "Dumping git status:"
+            echo "✗ ERROR: Git push failed. Check GITHUB_TOKEN or permissions."
             git status
             exit 1
           }
