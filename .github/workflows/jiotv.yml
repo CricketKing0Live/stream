@@ -43,13 +43,22 @@ jobs:
       - name: Extract Cookie and Update Jiotv.json
         run: |
           echo "=== Extracting Cookie ==="
-          NEW_COOKIE=$(jq -r '.url' stream.json 2>/dev/null || echo "null")
-          if [ "$NEW_COOKIE" = "null" ] || [ -z "$NEW_COOKIE" ]; then
-            echo "✗ ERROR: No valid cookie found in url. Update skipped."
+          FULL_URL=$(jq -r '.url' stream.json 2>/dev/null || echo "null")
+          if [ "$FULL_URL" = "null" ] || [ -z "$FULL_URL" ]; then
+            echo "✗ ERROR: No valid URL found in url field. Update skipped."
             rm -f stream.json
             exit 0
           fi
-          echo "✓ Full cookie extracted: $NEW_COOKIE"
+          echo "✓ Full URL extracted: $FULL_URL"
+
+          # Extract the __hdnea__ parameter from the URL
+          NEW_COOKIE=$(echo "$FULL_URL" | grep -o '__hdnea__=[^&]*' || echo "null")
+          if [ "$NEW_COOKIE" = "null" ] || [ -z "$NEW_COOKIE" ]; then
+            echo "✗ ERROR: No valid __hdnea__ cookie found in URL. Update skipped."
+            rm -f stream.json
+            exit 0
+          fi
+          echo "✓ Cookie extracted: $NEW_COOKIE"
 
           echo "=== Updating Jiotv.json ==="
           # Create a backup of Jiotv.json or initialize if missing
