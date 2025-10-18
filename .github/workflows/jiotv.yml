@@ -14,7 +14,7 @@ jobs:
           fetch-depth: 0 # Fetch full history to avoid shallow clone issues
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
-      - name: Fetch JSON and Extract Star Vijay HD Cookie
+      - name: Fetch JSON and Extract Any hdnea Cookie
         run: |
           echo "=== Fetching JSON from https://jo-json.vodep39240327.workers.dev/ ==="
           curl -s -f --retry 3 --retry-delay 5 https://jo-json.vodep39240327.workers.dev/ > stream.json || {
@@ -34,14 +34,14 @@ jobs:
             exit 1
           }
 
-          echo "=== Extracting __hdnea__ Cookie for Star Vijay HD ==="
-          # Try flat and nested structures for Star Vijay HD
+          echo "=== Extracting __hdnea__ Cookie from Any Channel ==="
+          # Try flat fields (url, link, stream_url) or nested channels array
           FULL_URL=$(jq -r '
             .url // .link // .stream_url // 
-            (.channels[]? | select(.name? | test("Star Vijay HD"; "i")?) | .url // .link // .stream_url) // 
-            "" | select(. != "" and test("Star_Vijay_HD_BTS"))' stream.json 2>/dev/null || echo "null")
+            (.channels[]? | .url // .link // .stream_url) // 
+            "" | select(. != "" and test("__hdnea__=")) | first' stream.json 2>/dev/null || echo "null")
           if [ "$FULL_URL" = "null" ] || [ -z "$FULL_URL" ]; then
-            echo "✗ ERROR: No valid URL found for Star Vijay HD. Tried fields: url, link, stream_url, channels[].{url,link,stream_url}. Dumping JSON:"
+            echo "✗ ERROR: No valid URL with __hdnea__ found. Tried fields: url, link, stream_url, channels[].{url,link,stream_url}. Dumping JSON:"
             cat stream.json | jq .
             rm -f stream.json
             exit 0
@@ -59,10 +59,10 @@ jobs:
         run: |
           echo "=== Updating Jiotv.json ==="
           # Ensure Jiotv.json exists
-          cp Jiotv.json Jiotv_backup.json 2>/dev/null || echo '[{"channel": "Star Vijay HD", "cookie": ""}]' > Jiotv_backup.json
+          cp Jiotv.json Jiotv_backup.json 2>/dev/null || echo '[{"channel": "Unknown", "cookie": ""}]' > Jiotv_backup.json
           if ! jq -e . Jiotv_backup.json >/dev/null 2>&1; then
             echo "✗ WARNING: Jiotv.json is invalid JSON. Initializing new structure."
-            echo '[{"channel": "Star Vijay HD", "cookie": "'"$NEW_COOKIE"'"}]' > Jiotv_backup.json
+            echo '[{"channel": "Unknown", "cookie": "'"$NEW_COOKIE"'"}]' > Jiotv_backup.json
           fi
           # Update cookie for all channels
           jq --arg new_cookie "$NEW_COOKIE" '[.[] | .cookie = $new_cookie]' Jiotv_backup.json > Jiotv_updated.json
