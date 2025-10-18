@@ -14,7 +14,7 @@ jobs:
           fetch-depth: 0 # Fetch full history to avoid shallow clone issues
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
-      - name: Fetch JSON and Extract Any hdnea Cookie
+      - name: Fetch JSON and Extract hdnea Cookie
         run: |
           echo "=== Fetching JSON from https://jo-json.vodep39240327.workers.dev/ ==="
           curl -s -f --retry 3 --retry-delay 5 https://jo-json.vodep39240327.workers.dev/ > stream.json || {
@@ -34,23 +34,15 @@ jobs:
             exit 1
           }
 
-          echo "=== Extracting __hdnea__ Cookie from Any Channel ==="
-          # Try flat fields (url, link, stream_url) or nested channels array
-          FULL_URL=$(jq -r '
-            .url // .link // .stream_url // 
-            (.channels[]? | .url // .link // .stream_url) // 
-            "" | select(. != "" and test("__hdnea__=")) | first' stream.json 2>/dev/null || echo "null")
-          if [ "$FULL_URL" = "null" ] || [ -z "$FULL_URL" ]; then
-            echo "✗ ERROR: No valid URL with __hdnea__ found. Tried fields: url, link, stream_url, channels[].{url,link,stream_url}. Dumping JSON:"
-            cat stream.json | jq .
-            rm -f stream.json
-            exit 0
-          fi
-          echo "✓ Found URL: $FULL_URL"
-
-          NEW_COOKIE=$(echo "$FULL_URL" | grep -o '__hdnea__=[^&]*' || echo "null")
+          echo "=== Extracting __hdnea__ Cookie ==="
+          # Try cookie field in flat or nested structure
+          NEW_COOKIE=$(jq -r '
+            .cookie // 
+            (.channels[]? | .cookie) // 
+            "" | select(. != "" and test("^__hdnea__=")) | first' stream.json 2>/dev/null || echo "null")
           if [ "$NEW_COOKIE" = "null" ] || [ -z "$NEW_COOKIE" ]; then
-            echo "✗ ERROR: No valid __hdnea__ cookie found in URL: $FULL_URL"
+            echo "✗ ERROR: No valid __hdnea__ cookie found. Tried fields: cookie, channels[].cookie. Dumping JSON:"
+            cat stream.json | jq .
             rm -f stream.json
             exit 0
           fi
