@@ -27,7 +27,7 @@ jobs:
           fi
           echo "✓ JSON fetched. File size: $(wc -c < stream.json) bytes"
 
-          echo "=== Extracting hdnea Cookie ==="
+          echo "=== Extracting __hdnea__ Cookie ==="
           FULL_URL=$(jq -r '.url' stream.json 2>/dev/null || echo "null")
           if [ "$FULL_URL" = "null" ] || [ -z "$FULL_URL" ]; then
             echo "✗ ERROR: No valid URL found in JSON. Update skipped."
@@ -35,13 +35,13 @@ jobs:
             exit 0
           fi
 
-          NEW_COOKIE=$(echo "$FULL_URL" | grep -o '__hdnea__=[^&]*' | cut -d'=' -f2- || echo "null")
+          NEW_COOKIE=$(echo "$FULL_URL" | grep -o '__hdnea__=[^&]*' || echo "null")
           if [ "$NEW_COOKIE" = "null" ] || [ -z "$NEW_COOKIE" ]; then
-            echo "✗ ERROR: No valid hdnea cookie found. Update skipped."
+            echo "✗ ERROR: No valid __hdnea__ cookie found. Update skipped."
             rm -f stream.json
             exit 0
           fi
-          echo "✓ hdnea Cookie: $NEW_COOKIE"
+          echo "✓ __hdnea__ Cookie: $NEW_COOKIE"
       - name: Update Jiotv.json
         run: |
           echo "=== Updating Jiotv.json ==="
@@ -69,7 +69,7 @@ jobs:
             exit 0
           fi
 
-          git commit -m "Update hdnea cookie in Jiotv.json (${{ github.sha }})"
+          git commit -m "Update __hdnea__ cookie in Jiotv.json (${{ github.sha }})"
           git pull --rebase origin main || {
             echo "✗ ERROR: Git pull --rebase failed."
             git status
