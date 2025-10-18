@@ -17,12 +17,21 @@ jobs:
       - name: Fetch and Debug new URL
         run: |
           echo "=== Fetching from https://jo-json.vodep39240327.workers.dev/ ==="
-          curl -s https://jo-json.vodep39240327.workers.dev/ > stream.json
+          curl -s -f https://jo-json.vodep39240327.workers.dev/ > stream.json || {
+            echo "✗ ERROR: Failed to fetch stream.json. HTTP request failed."
+            exit 1
+          }
           if [ ! -s stream.json ]; then
-            echo "✗ ERROR: Failed to fetch stream.json. File is empty."
+            echo "✗ ERROR: stream.json is empty."
             exit 1
           fi
           echo "File size: $(wc -c < stream.json) bytes"
+          echo "Checking JSON validity..."
+          if ! jq -e . stream.json >/dev/null 2>&1; then
+            echo "✗ ERROR: stream.json is not valid JSON. Dumping content:"
+            cat stream.json
+            exit 1
+          fi
           echo "Searching for url..."
           if jq -e '.url' stream.json >/dev/null 2>&1; then
             echo "✓ url found in file!"
@@ -35,7 +44,7 @@ jobs:
         run: |
           echo "=== Extracting Cookie ==="
           NEW_COOKIE=$(jq -r '.url' stream.json 2>/dev/null || echo "null")
-          if [ "$NEW_COOKIE" = "null" ]; then
+          if [ "$NEW_COOKIE" = "null" ] || [ -z "$NEW_COOKIE" ]; then
             echo "✗ ERROR: No valid cookie found in url. Update skipped."
             rm -f stream.json
             exit 0
