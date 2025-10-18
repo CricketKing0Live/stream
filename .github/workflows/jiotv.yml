@@ -17,8 +17,8 @@ jobs:
       - name: Fetch JSON and Extract Star Vijay HD Cookie
         run: |
           echo "=== Fetching JSON from https://jo-json.vodep39240327.workers.dev/ ==="
-          curl -s -f https://jo-json.vodep39240327.workers.dev/ > stream.json || {
-            echo "✗ ERROR: Failed to fetch JSON."
+          curl -s -f --retry 3 --retry-delay 5 https://jo-json.vodep39240327.workers.dev/ > stream.json || {
+            echo "✗ ERROR: Failed to fetch JSON after retries."
             exit 1
           }
           if [ ! -s stream.json ]; then
@@ -27,7 +27,7 @@ jobs:
           fi
           echo "✓ JSON fetched. File size: $(wc -c < stream.json) bytes"
 
-          echo "=== Checking JSON content ==="
+          echo "=== JSON Content ==="
           cat stream.json | jq . || {
             echo "✗ ERROR: JSON is invalid. Dumping raw content:"
             cat stream.json
@@ -35,14 +35,18 @@ jobs:
           }
 
           echo "=== Extracting __hdnea__ Cookie for Star Vijay HD ==="
-          # Try common field names (url, link, stream_url) and filter for Star_Vijay_HD_BTS
-          FULL_URL=$(jq -r '.url // .link // .stream_url // "" | select(test("Star_Vijay_HD_BTS"))' stream.json 2>/dev/null || echo "null")
+          # Try flat and nested structures for Star Vijay HD
+          FULL_URL=$(jq -r '
+            .url // .link // .stream_url // 
+            (.channels[]? | select(.name? | test("Star Vijay HD"; "i")?) | .url // .link // .stream_url) // 
+            "" | select(. != "" and test("Star_Vijay_HD_BTS"))' stream.json 2>/dev/null || echo "null")
           if [ "$FULL_URL" = "null" ] || [ -z "$FULL_URL" ]; then
-            echo "✗ ERROR: No valid URL found for Star Vijay HD in JSON. Dumping JSON:"
+            echo "✗ ERROR: No valid URL found for Star Vijay HD. Tried fields: url, link, stream_url, channels[].{url,link,stream_url}. Dumping JSON:"
             cat stream.json | jq .
             rm -f stream.json
             exit 0
           fi
+          echo "✓ Found URL: $FULL_URL"
 
           NEW_COOKIE=$(echo "$FULL_URL" | grep -o '__hdnea__=[^&]*' || echo "null")
           if [ "$NEW_COOKIE" = "null" ] || [ -z "$NEW_COOKIE" ]; then
@@ -50,18 +54,22 @@ jobs:
             rm -f stream.json
             exit 0
           fi
-          echo "✓ __hdnea__ Cookie for Star Vijay HD: $NEW_COOKIE"
+          echo "✓ __hdnea__ Cookie: $NEW_COOKIE"
       - name: Update Jiotv.json
         run: |
           echo "=== Updating Jiotv.json ==="
+          # Ensure Jiotv.json exists
           cp Jiotv.json Jiotv_backup.json 2>/dev/null || echo '[{"cookie": ""}]' > Jiotv_backup.json
           if ! jq -e . Jiotv_backup.json >/dev/null 2>&1; then
             echo "✗ WARNING: Jiotv.json is invalid JSON. Initializing new structure."
             echo '[{"cookie": "'"$NEW_COOKIE"'"}]' > Jiotv_backup.json
           fi
+          # Update cookie
           jq --arg new_cookie "$NEW_COOKIE" 'map(if .cookie then .cookie = $new_cookie else . + {"cookie": $new_cookie} end)' Jiotv_backup.json > Jiotv_updated.json
           mv Jiotv_updated.json Jiotv.json
           echo "✓ Jiotv.json updated with cookie: $NEW_COOKIE"
+          echo "=== Jiotv.json Content ==="
+          cat Jiotv.json | jq .
 
           git add Jiotv.json
       - name: Clean Up
@@ -73,12 +81,12 @@ jobs:
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
 
-          if git diff --staged --quiet; then
-            echo "✓ No changes to Jiotv.json. Skipping commit."
-            exit 0
-          fi
+          # Force commit even if changes are minor
+          git commit -m "Update Star Vijay HD __hdnea__ cookie in Jiotv.json (${{ github.sha }})" || {
+            echo "✓ No changes to Jiotv.json. Still committing to verify update."
+            git commit -m "No-op commit to verify Jiotv.json update (${{ github.sha }})" --allow-empty
+          }
 
-          git commit -m "Update Star Vijay HD __hdnea__ cookie in Jiotv.json (${{ github.sha }})"
           git pull --rebase origin main || {
             echo "✗ ERROR: Git pull --rebase failed."
             git status
