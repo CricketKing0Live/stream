@@ -1,9 +1,9 @@
-name: Auto Update JioTV Star Vijay HD Cookie (Every 4 Hours)
+name: Auto Update JioTV hdnea Cookie for All Channels (Every 6 Hours)
 permissions:
   contents: write
 on:
   schedule:
-    - cron: '0 */4 * * *' # Every 4 hours (0:00, 4:00, 8:00, 12:00, 16:00, 20:00 UTC)
+    - cron: '0 */6 * * *' # Every 6 hours (0:00, 6:00, 12:00, 18:00 UTC)
   workflow_dispatch: # Manual trigger
 jobs:
   update-cookies:
@@ -55,19 +55,19 @@ jobs:
             exit 0
           fi
           echo "✓ __hdnea__ Cookie: $NEW_COOKIE"
-      - name: Update Jiotv.json
+      - name: Update Jiotv.json for All Channels
         run: |
           echo "=== Updating Jiotv.json ==="
           # Ensure Jiotv.json exists
-          cp Jiotv.json Jiotv_backup.json 2>/dev/null || echo '[{"cookie": ""}]' > Jiotv_backup.json
+          cp Jiotv.json Jiotv_backup.json 2>/dev/null || echo '[{"channel": "Star Vijay HD", "cookie": ""}]' > Jiotv_backup.json
           if ! jq -e . Jiotv_backup.json >/dev/null 2>&1; then
             echo "✗ WARNING: Jiotv.json is invalid JSON. Initializing new structure."
-            echo '[{"cookie": "'"$NEW_COOKIE"'"}]' > Jiotv_backup.json
+            echo '[{"channel": "Star Vijay HD", "cookie": "'"$NEW_COOKIE"'"}]' > Jiotv_backup.json
           fi
-          # Update cookie
-          jq --arg new_cookie "$NEW_COOKIE" 'map(if .cookie then .cookie = $new_cookie else . + {"cookie": $new_cookie} end)' Jiotv_backup.json > Jiotv_updated.json
+          # Update cookie for all channels
+          jq --arg new_cookie "$NEW_COOKIE" '[.[] | .cookie = $new_cookie]' Jiotv_backup.json > Jiotv_updated.json
           mv Jiotv_updated.json Jiotv.json
-          echo "✓ Jiotv.json updated with cookie: $NEW_COOKIE"
+          echo "✓ Jiotv.json updated with cookie for all channels: $NEW_COOKIE"
           echo "=== Jiotv.json Content ==="
           cat Jiotv.json | jq .
 
@@ -81,9 +81,9 @@ jobs:
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
 
-          # Force commit even if changes are minor
-          git commit -m "Update Star Vijay HD __hdnea__ cookie in Jiotv.json (${{ github.sha }})" || {
-            echo "✓ No changes to Jiotv.json. Still committing to verify update."
+          # Commit even if changes are minor
+          git commit -m "Update __hdnea__ cookie for all channels in Jiotv.json (${{ github.sha }})" || {
+            echo "✓ No changes to Jiotv.json. Committing to verify update."
             git commit -m "No-op commit to verify Jiotv.json update (${{ github.sha }})" --allow-empty
           }
 
