@@ -1,4 +1,4 @@
-name: Auto Update JioTV hdnea Cookie (Every 4 Hours)
+name: Auto Update JioTV Star Vijay HD Cookie (Every 4 Hours)
 permissions:
   contents: write
 on:
@@ -14,7 +14,7 @@ jobs:
           fetch-depth: 0 # Fetch full history to avoid shallow clone issues
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
-      - name: Fetch JSON and Extract hdnea Cookie
+      - name: Fetch JSON and Extract Star Vijay HD Cookie
         run: |
           echo "=== Fetching JSON from https://jo-json.vodep39240327.workers.dev/ ==="
           curl -s -f https://jo-json.vodep39240327.workers.dev/ > stream.json || {
@@ -34,10 +34,11 @@ jobs:
             exit 1
           }
 
-          echo "=== Extracting __hdnea__ Cookie ==="
-          FULL_URL=$(jq -r '.url // .link // .stream_url // ""' stream.json 2>/dev/null || echo "null")
+          echo "=== Extracting __hdnea__ Cookie for Star Vijay HD ==="
+          # Try common field names (url, link, stream_url) and filter for Star_Vijay_HD_BTS
+          FULL_URL=$(jq -r '.url // .link // .stream_url // "" | select(test("Star_Vijay_HD_BTS"))' stream.json 2>/dev/null || echo "null")
           if [ "$FULL_URL" = "null" ] || [ -z "$FULL_URL" ]; then
-            echo "✗ ERROR: No valid URL found in JSON (tried .url, .link, .stream_url). Dumping JSON:"
+            echo "✗ ERROR: No valid URL found for Star Vijay HD in JSON. Dumping JSON:"
             cat stream.json | jq .
             rm -f stream.json
             exit 0
@@ -49,7 +50,7 @@ jobs:
             rm -f stream.json
             exit 0
           fi
-          echo "✓ __hdnea__ Cookie: $NEW_COOKIE"
+          echo "✓ __hdnea__ Cookie for Star Vijay HD: $NEW_COOKIE"
       - name: Update Jiotv.json
         run: |
           echo "=== Updating Jiotv.json ==="
@@ -77,7 +78,7 @@ jobs:
             exit 0
           fi
 
-          git commit -m "Update __hdnea__ cookie in Jiotv.json (${{ github.sha }})"
+          git commit -m "Update Star Vijay HD __hdnea__ cookie in Jiotv.json (${{ github.sha }})"
           git pull --rebase origin main || {
             echo "✗ ERROR: Git pull --rebase failed."
             git status
