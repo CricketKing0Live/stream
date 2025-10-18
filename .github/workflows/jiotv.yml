@@ -1,4 +1,4 @@
-name: Auto Update JioTV Cookies (Fixed Path and Force Update Every 4 Hours)
+name: Auto Update JioTV Cookies (Extract hdnea Cookie Every 4 Hours)
 permissions:
   contents: write
 on:
@@ -14,7 +14,7 @@ jobs:
           fetch-depth: 0 # Fetch full history to avoid shallow clone issues
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
-      - name: Fetch and Debug new URL
+      - name: Fetch and Validate JSON
         run: |
           echo "=== Fetching from https://jo-json.vodep39240327.workers.dev/ ==="
           curl -s -f https://jo-json.vodep39240327.workers.dev/ > stream.json || {
@@ -26,7 +26,6 @@ jobs:
             exit 1
           fi
           echo "File size: $(wc -c < stream.json) bytes"
-          echo "Checking JSON validity..."
           if ! jq -e . stream.json >/dev/null 2>&1; then
             echo "✗ ERROR: stream.json is not valid JSON. Dumping content:"
             cat stream.json
@@ -40,25 +39,25 @@ jobs:
             head -n 200 stream.json
             exit 1
           fi
-      - name: Extract Cookie and Update Jiotv.json
+      - name: Extract hdnea Cookie and Update Jiotv.json
         run: |
-          echo "=== Extracting Cookie ==="
+          echo "=== Extracting hdnea Cookie ==="
           FULL_URL=$(jq -r '.url' stream.json 2>/dev/null || echo "null")
           if [ "$FULL_URL" = "null" ] || [ -z "$FULL_URL" ]; then
             echo "✗ ERROR: No valid URL found in url field. Update skipped."
             rm -f stream.json
             exit 0
           fi
-          echo "✓ Full URL extracted: $FULL_URL"
+          echo "✓ Full URL: $FULL_URL"
 
-          # Extract the __hdnea__ parameter from the URL
-          NEW_COOKIE=$(echo "$FULL_URL" | grep -o '__hdnea__=[^&]*' || echo "null")
+          # Extract only the hdnea cookie value (without __hdnea__= prefix)
+          NEW_COOKIE=$(echo "$FULL_URL" | grep -o '__hdnea__=[^&]*' | cut -d'=' -f2- || echo "null")
           if [ "$NEW_COOKIE" = "null" ] || [ -z "$NEW_COOKIE" ]; then
-            echo "✗ ERROR: No valid __hdnea__ cookie found in URL. Update skipped."
+            echo "✗ ERROR: No valid hdnea cookie found in URL. Update skipped."
             rm -f stream.json
             exit 0
           fi
-          echo "✓ Cookie extracted: $NEW_COOKIE"
+          echo "✓ hdnea Cookie extracted: $NEW_COOKIE"
 
           echo "=== Updating Jiotv.json ==="
           # Create a backup of Jiotv.json or initialize if missing
@@ -94,7 +93,7 @@ jobs:
           fi
 
           # Commit changes to Jiotv.json
-          git commit -m "Auto-update cookies in Jiotv.json (new: ${{ github.sha }})"
+          git commit -m "Auto-update hdnea cookie in Jiotv.json (new: ${{ github.sha }})"
 
           # Pull latest changes with rebase
           git pull --rebase origin main || {
