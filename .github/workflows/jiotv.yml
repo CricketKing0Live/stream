@@ -1,93 +1,159 @@
-name: Auto Update JioTV hdnea Cookie for All Channels (Every 6 Hours)
+name: Update Zootv Cookies
+
 permissions:
   contents: write
+
 on:
   schedule:
-    - cron: '0 */6 * * *' # Every 6 hours (0:00, 6:00, 12:00, 18:00 UTC)
-  workflow_dispatch: # Manual trigger
+    - cron: '0 */6 * * *'  # Every 6 hours
+  workflow_dispatch:  # Manual trigger
+
 jobs:
   update-cookies:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Repository
+        uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Fetch full history to avoid shallow clone issues
-      - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
-      - name: Fetch JSON and Extract hdnea Cookie
-        run: |
-          echo "=== Fetching JSON from https://jo-json.vodep39240327.workers.dev/ ==="
-          curl -s -f --retry 3 --retry-delay 5 https://jo-json.vodep39240327.workers.dev/ > stream.json || {
-            echo "✗ ERROR: Failed to fetch JSON after retries."
-            exit 1
-          }
-          if [ ! -s stream.json ]; then
-            echo "✗ ERROR: JSON file is empty."
-            exit 1
-          fi
-          echo "✓ JSON fetched. File size: $(wc -c < stream.json) bytes"
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
 
-          echo "=== JSON Content ==="
-          cat stream.json | jq . || {
-            echo "✗ ERROR: JSON is invalid. Dumping raw content:"
-            cat stream.json
-            exit 1
-          }
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
 
-          echo "=== Extracting __hdnea__ Cookie ==="
-          # Try cookie field in flat or nested structure
-          NEW_COOKIE=$(jq -r '
-            .cookie // 
-            (.channels[]? | .cookie) // 
-            "" | select(. != "" and test("^__hdnea__=")) | first' stream.json 2>/dev/null || echo "null")
-          if [ "$NEW_COOKIE" = "null" ] || [ -z "$NEW_COOKIE" ]; then
-            echo "✗ ERROR: No valid __hdnea__ cookie found. Tried fields: cookie, channels[].cookie. Dumping JSON:"
-            cat stream.json | jq .
-            rm -f stream.json
-            exit 0
-          fi
-          echo "✓ __hdnea__ Cookie: $NEW_COOKIE"
-      - name: Update Jiotv.json for All Channels
+      - name: Install Dependencies
         run: |
-          echo "=== Updating Jiotv.json ==="
-          # Ensure Jiotv.json exists
-          cp Jiotv.json Jiotv_backup.json 2>/dev/null || echo '[{"channel": "Unknown", "cookie": ""}]' > Jiotv_backup.json
-          if ! jq -e . Jiotv_backup.json >/dev/null 2>&1; then
-            echo "✗ WARNING: Jiotv.json is invalid JSON. Initializing new structure."
-            echo '[{"channel": "Unknown", "cookie": "'"$NEW_COOKIE"'"}]' > Jiotv_backup.json
-          fi
-          # Update cookie for all channels
-          jq --arg new_cookie "$NEW_COOKIE" '[.[] | .cookie = $new_cookie]' Jiotv_backup.json > Jiotv_updated.json
-          mv Jiotv_updated.json Jiotv.json
-          echo "✓ Jiotv.json updated with cookie for all channels: $NEW_COOKIE"
-          echo "=== Jiotv.json Content ==="
-          cat Jiotv.json | jq .
+          python -m pip install --upgrade pip
+          pip install requests
 
-          git add Jiotv.json
-      - name: Clean Up
+      - name: Update Cookies in Zootv.json
         run: |
-          rm -f stream.json Jiotv_backup.json
-          echo "✓ Cleaned up temporary files"
+          python -c "
+          import json
+          import requests
+          from urllib.parse import urlparse
+          import re
+          import os
+
+          API_URL = 'https://jo-json.vodep39240327.workers.dev'
+          PLAYLIST_FILE = 'Zootv.json'
+
+          def fetch_channel_data():
+              try:
+                  response = requests.get(API_URL, timeout=30)
+                  response.raise_for_status()
+                  data = response.json()
+                  print(f'✅ Fetched {len(data)} channels from source.')
+                  return data
+              except Exception as e:
+                  print(f'❌ Error fetching data: {e}')
+                  return None
+
+          def load_playlist():
+              try:
+                  with open(PLAYLIST_FILE, 'r', encoding='utf-8') as f:
+                      playlist = json.load(f)
+                  print(f'✅ Loaded {len(playlist)} channels from {PLAYLIST_FILE}.')
+                  return playlist
+              except FileNotFoundError:
+                  print('⚠️ Zootv.json not found. Exiting.')
+                  exit(1)
+              except Exception as e:
+                  print(f'❌ Error loading playlist: {e}')
+                  exit(1)
+
+          def save_playlist(playlist):
+              try:
+                  with open(PLAYLIST_FILE, 'w', encoding='utf-8') as f:
+                      json.dump(playlist, f, indent=2, ensure_ascii=False)
+                  print(f'✅ Playlist saved with {len(playlist)} channels!')
+              except Exception as e:
+                  print(f'❌ Error saving playlist: {e}')
+                  exit(1)
+
+          def extract_cookie_from_url(url):
+              try:
+                  parsed_url = urlparse(url)
+                  query = parsed_url.query
+                  match = re.search(r'__hdnea__=([^&]*)', query)
+                  if match:
+                      cookie_value = match.group(1)
+                      cookie = f'__hdnea__={cookie_value}'
+                      print(f'🍪 Extracted cookie: {cookie[:50]}...')
+                      return cookie
+                  print(f'⚠️ No __hdnea__ cookie found in URL: {url}')
+                  return 'no_cookie_available'
+              except Exception as e:
+                  print(f'❌ Error extracting cookie: {e}')
+                  return 'no_cookie_available'
+
+          def extract_channel_name_from_url(url):
+              try:
+                  parsed_url = urlparse(url)
+                  path = parsed_url.path
+                  match = re.search(r'/bpk-tv/([^/]+)(?:/WDVLive|/output)/index\.mpd', path)
+                  if match:
+                      raw_name = match.group(1)
+                      clean_name = re.sub(r'_BTS|_MOB', '', raw_name).replace('_', ' ').strip()
+                      return clean_name if clean_name else 'Unknown'
+                  print(f'⚠️ No channel name found in URL: {url}')
+                  return None
+              except Exception as e:
+                  print(f'❌ Error extracting channel name: {e}')
+                  return None
+
+          def update_cookies(playlist, fresh_data):
+              updated_count = 0
+              existing_channels = {extract_channel_name_from_url(ch['link']): ch for ch in playlist if extract_channel_name_from_url(ch['link'])}
+
+              for channel_id, data in fresh_data.items():
+                  try:
+                      url = data.get('url', '')
+                      if not url:
+                          print(f'⚠️ Skipped {channel_id}: Missing URL')
+                          continue
+
+                      cookie = extract_cookie_from_url(url)
+                      channel_name = extract_channel_name_from_url(url)
+                      if not channel_name:
+                          print(f'⚠️ Skipped {channel_id}: Could not extract channel name')
+                          continue
+
+                      if channel_name in existing_channels:
+                          existing_channels[channel_name]['cookie'] = cookie
+                          updated_count += 1
+                          print(f'🔄 Updated cookie for {channel_name} ({channel_id})')
+                      else:
+                          print(f'⚠️ Skipped {channel_name} ({channel_id}): Channel not in playlist')
+
+                  except Exception as e:
+                      print(f'❌ Error processing {channel_id}: {e}')
+
+              print(f'📊 Cookies Updated: {updated_count}')
+              return playlist
+
+          def main():
+              print('🚀 Starting cookie update...')
+              fresh_data = fetch_channel_data()
+              if not fresh_data:
+                  print('❌ No data fetched. Exiting.')
+                  exit(1)
+              playlist = load_playlist()
+              updated_playlist = update_cookies(playlist, fresh_data)
+              save_playlist(updated_playlist)
+              print('🎉 Cookie update complete!')
+
+          if __name__ == '__main__':
+              main()
+          "
+
       - name: Commit and Push Changes
-        run: |
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-
-          # Commit even if changes are minor
-          git commit -m "Update __hdnea__ cookie for all channels in Jiotv.json (${{ github.sha }})" || {
-            echo "✓ No changes to Jiotv.json. Committing to verify update."
-            git commit -m "No-op commit to verify Jiotv.json update (${{ github.sha }})" --allow-empty
-          }
-
-          git pull --rebase origin main || {
-            echo "✗ ERROR: Git pull --rebase failed."
-            git status
-            exit 1
-          }
-          git push || {
-            echo "✗ ERROR: Git push failed. Check GITHUB_TOKEN or permissions."
-            git status
-            exit 1
-          }
+        uses: EndBug/add-and-commit@v9
+        with:
+          message: 'Auto-update cookies in Zootv.json'
+          add: 'Zootv.json'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
