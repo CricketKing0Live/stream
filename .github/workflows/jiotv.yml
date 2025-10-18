@@ -27,17 +27,25 @@ jobs:
           fi
           echo "✓ JSON fetched. File size: $(wc -c < stream.json) bytes"
 
+          echo "=== Checking JSON content ==="
+          cat stream.json | jq . || {
+            echo "✗ ERROR: JSON is invalid. Dumping raw content:"
+            cat stream.json
+            exit 1
+          }
+
           echo "=== Extracting __hdnea__ Cookie ==="
-          FULL_URL=$(jq -r '.url' stream.json 2>/dev/null || echo "null")
+          FULL_URL=$(jq -r '.url // .link // .stream_url // ""' stream.json 2>/dev/null || echo "null")
           if [ "$FULL_URL" = "null" ] || [ -z "$FULL_URL" ]; then
-            echo "✗ ERROR: No valid URL found in JSON. Update skipped."
+            echo "✗ ERROR: No valid URL found in JSON (tried .url, .link, .stream_url). Dumping JSON:"
+            cat stream.json | jq .
             rm -f stream.json
             exit 0
           fi
 
           NEW_COOKIE=$(echo "$FULL_URL" | grep -o '__hdnea__=[^&]*' || echo "null")
           if [ "$NEW_COOKIE" = "null" ] || [ -z "$NEW_COOKIE" ]; then
-            echo "✗ ERROR: No valid __hdnea__ cookie found. Update skipped."
+            echo "✗ ERROR: No valid __hdnea__ cookie found in URL: $FULL_URL"
             rm -f stream.json
             exit 0
           fi
