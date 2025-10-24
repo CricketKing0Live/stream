@@ -1,1 +1,45 @@
+name: Update Zee5 Cookies (All Channels)
 
+on:
+  schedule:
+    - cron: '0 */6 * * *'  # Har 6 ghante me
+  workflow_dispatch:       # Manual run
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download z5.m3u
+        run: curl -fsS https://raw.githubusercontent.com/alex8875/m3u/refs/heads/main/z5.m3u -o z5.m3u
+
+      - name: Extract Cookie
+        id: cookie
+        run: |
+          COOKIE=$(grep -m1 'hdntl=' z5.m3u || echo "")
+          if [ -z "$COOKIE" ]; then
+            echo "Cookie not found!"
+            exit 1
+          fi
+          echo "value=$COOKIE" >> $GITHUB_OUTPUT
+
+      - name: Update Only Cookie in Zee5.json
+        run: |
+          jq --arg c "${{ steps.cookie.outputs.value }}" '.[] |= (.cookie = $c)' Zee5.json > tmp.json && mv tmp.json Zee5.json
+
+      - name: Commit & Push (Only if Cookie Changed)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions@github.com"
+          git add Zee5.json
+          if git diff --staged --quiet; then
+            echo "No change in cookie"
+          else
+            git commit -m "Update cookie (all channels) [skip ci]"
+            git push
+          fi
