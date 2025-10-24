@@ -1,0 +1,48 @@
+name: Update JioHotstar Cookie (Valid Only)
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'  # Har 6 ghante me
+  workflow_dispatch:      # Manual trigger
+
+jobs:
+  update-cookie:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Download jcinema.m3u
+        run: curl -fsS https://raw.githubusercontent.com/alex8875/m3u/refs/heads/main/jcinema.m3u -o jcinema.m3u
+
+      - name: Extract Valid hdntl Cookie
+        id: extract
+        run: |
+          COOKIE=$(grep -o 'hdntl=exp=[0-9]\+~acl=%2f\*~data=hdntl~hmac=[a-f0-9]\{64\}' jcinema.m3u | head -1)
+          
+          if [[ -z "$COOKIE" || ! "$COOKIE" =~ ^hdntl=exp=[0-9]+~acl=%2f\*~data=hdntl~hmac=[a-f0-9]{64}$ ]]; then
+            echo "Valid hdntl cookie not found in jcinema.m3u!"
+            exit 1
+          fi
+          
+          echo "value=$COOKIE" >> $GITHUB_OUTPUT
+          echo "Extracted cookie: $COOKIE"
+
+      - name: Update Cookie in JioHotstar.json (All Channels)
+        run: |
+          jq --arg c "${{ steps.extract.outputs.value }}" '.[] |= (.cookie = $c)' JioHotstar.json > tmp.json && mv tmp.json JioHotstar.json
+
+      - name: Commit & Push (Only if Cookie Changed)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions@github.com"
+          git add JioHotstar.json
+          if git diff --staged --quiet; then
+            echo "Cookie already up to date"
+          else
+            git commit -m "Update hdntl cookie for all JioHotstar channels [skip ci]"
+            git push
+          fi
