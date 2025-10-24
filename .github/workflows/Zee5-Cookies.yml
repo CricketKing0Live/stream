@@ -2,18 +2,20 @@ name: Update Zee5 Cookie (Valid Only)
 
 on:
   schedule:
-    - cron: '0 */6 * * *'  # Har 6 ghante me
+    - cron: '0 */6 * * *'   # har 6 ghante me
   workflow_dispatch:
 
 jobs:
   update:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write          # repo ke liye write permission
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}   # default token
 
       - name: Download z5.m3u
         run: curl -fsS https://raw.githubusercontent.com/alex8875/m3u/refs/heads/main/z5.m3u -o z5.m3u
@@ -21,14 +23,11 @@ jobs:
       - name: Extract Valid hdntl Cookie
         id: cookie
         run: |
-          # Sirf valid format wala cookie le (hdntl=exp=...~hmac=...)
-          COOKIE=$(grep -o 'hdntl=exp=[0-9]\+~acl=%2f\*~data=hdntl~hmac=[a-f0-9]\{64\}' z5.m3u | head -1)
-          
-          if [[ -z "$COOKIE" || ! "$COOKIE" =~ ^hdntl=exp=[0-9]+~acl=%2f\*~data=hdntl~hmac=[a-f0-9]{64}$ ]]; then
+          COOKIE=$(grep -oE 'hdntl=exp=[0-9]+~acl=%2f\*~data=hdntl~hmac=[a-f0-9]{64}' z5.m3u | head -1)
+          if [[ -z "$COOKIE" ]]; then
             echo "Valid cookie not found!"
             exit 1
           fi
-          
           echo "value=$COOKIE" >> $GITHUB_OUTPUT
           echo "Found valid cookie: $COOKIE"
 
@@ -40,10 +39,15 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions@github.com"
+
           git add Zee5.json
-          if git diff --staged --quiet; then
+
+          if git diff --quiet --staged; then
             echo "Cookie already up to date"
           else
             git commit -m "Update valid hdntl cookie [skip ci]"
-            git push
+            # ---- PUSH FIX START ----
+            git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+            git push origin HEAD:${{ github.ref }}
+            # ---- PUSH FIX END ----
           fi
